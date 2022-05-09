@@ -51,12 +51,17 @@ contract StrategyBase is Ownable {
         // (in*0.997*R1)/(R0+in*0.997) >= in*MinRate
         // =>  in <= (997*R1 - 1000*MinRate*R0)/(997*MinRate)
         // =>  in <= R1/R - 1000 * R0 / BP
-        uint256 a = (r1 * 1e18) / minRate;
-        uint256 b = (1000 * r0) / _BP;
-        if (b >= a) {
-            return (0, 0);
+        if (minRate > 0) {
+            uint256 a = (r1 * 1e18) / minRate;
+            uint256 b = (1000 * r0) / _BP;
+            if (b >= a) {
+                return (0, 0);
+            }
+            amountIn = a - b > maxInput ? maxInput : a - b;
+        } else {
+            amountIn = maxInput > r0 ? r0 : maxInput;
         }
-        amountIn = a - b > maxInput ? maxInput : a - b;
+
         amountOut = (amountIn * _BP * r1) / (r0 * 1000 + amountIn * _BP);
         //safe check
         require((amountIn * minRate) / 1e18 <= amountOut, "invalid amountIn");
