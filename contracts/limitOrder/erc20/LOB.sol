@@ -60,8 +60,8 @@ contract LOB is Ownable {
 
         require(order.owner == msg.sender, "WRONG_INPUT_OWNER");
         require(
-            order.expiration >= block.timestamp + _ORDER_MIN_AGE && //solhint-disable  not-rely-on-time
-                order.expiration <= block.timestamp + _ORDER_MAX_AGE, //solhint-disable  not-rely-on-time
+            order.deadline >= block.timestamp + _ORDER_MIN_AGE && //solhint-disable  not-rely-on-time
+                order.deadline <= block.timestamp + _ORDER_MAX_AGE, //solhint-disable  not-rely-on-time
             "WRONG_EXPIRATION"
         );
         require(order.minInputPer <= order.inputAmount, "WRONG_INPUT_AMOUNT");
@@ -89,12 +89,24 @@ contract LOB is Ownable {
 
     /**
      * @notice Cancel order
+     * @dev
+     *   1. order can be closed by order owner on any time.
+     *   2. any one can close order when order has expired.
      */
-    function cancelOrder(bytes32 orderId) public onlySeller(orderId) {
-        uint256 balance = _orderStatus[orderId].balance;
-        address receiptor = _orders[orderId].receiptor;
-        // msg.sender is order owner
-        _transferOutBalance(orderId, receiptor == address(0) ? msg.sender : receiptor, balance);
+    function closeOrder(bytes32 orderId) public {
+        Order memory order = _orders[orderId];
+        address orderOwner = order.owner;
+        if (orderOwner != msg.sender) {
+            require(orderExpired(orderId), "order is active");
+        }
+        uint256 balance = _orderStatus[orderId].balance; //  balance may be zero.
+        delete _orderStatus[orderId];
+
+        TransferHelper.safeTransferTokenOrETH(
+            order.inputToken,
+            order.receiptor == address(0) ? orderOwner : order.receiptor,
+            balance
+        );
         emit OrderCancelled(orderId, balance);
     }
 
@@ -113,7 +125,7 @@ contract LOB is Ownable {
         IStrategy strategy,
         uint256 input,
         bytes memory data
-    ) public onlyRunning {
+    ) public onlyRunning returns (uint256 output, uint256 orderBalance) {
         Order memory order = _orders[orderId];
         require(isActiveOrder(orderId), "ORDER_NOT_ACTIVE");
 
@@ -127,7 +139,7 @@ contract LOB is Ownable {
 
         uint256 before = TransferHelper.balanceOf(order.outputToken, address(this));
         strategy.execute(order.inputToken, order.outputToken, data);
-        uint256 output = TransferHelper.balanceOf(order.outputToken, address(this)).sub(before);
+        output = TransferHelper.balanceOf(order.outputToken, address(this)).sub(before);
 
         // check bought
         uint256 expect = input.mul(order.minRate).div(1e18);
@@ -152,7 +164,11 @@ contract LOB is Ownable {
     function isActiveOrder(bytes32 orderId) public view returns (bool) {
         OrderStatus memory status = _orderStatus[orderId];
         //solhint-disable  not-rely-on-time
-        return !status.paused && status.balance > 0 && _orders[orderId].expiration >= block.timestamp;
+        return !status.paused && status.balance > 0 && _orders[orderId].deadline >= block.timestamp;
+    }
+
+    function orderExpired(bytes32 orderId) public view returns (bool) {
+        return _orders[orderId].deadline < block.timestamp && _orderStatus[orderId].balance > 0;
     }
 
     /**
@@ -168,7 +184,7 @@ contract LOB is Ownable {
                     o.outputToken,
                     o.inputAmount,
                     o.minRate,
-                    o.expiration,
+                    o.deadline,
                     o.minInputPer
                 )
             );

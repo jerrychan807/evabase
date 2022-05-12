@@ -23,7 +23,7 @@ type OrderInfo = {
   inputToken: string;
   minRate: BigNumberish;
   outputToken: string;
-  expiration: number;
+  deadline: number;
   receiptor: string;
   minInputPer: number;
 };
@@ -59,7 +59,7 @@ describe('ERC20 Limit Order', function () {
       inputToken: help.ETH_ADDRESS,
       minRate: ethers.utils.parseUnits('1', 18),
       outputToken: '',
-      expiration: Math.ceil(new Date().getTime() / 1000) + 60 * 60 * 24,
+      deadline: Math.ceil(new Date().getTime() / 1000) + 60 * 60 * 24,
       receiptor: bob,
       minInputPer: 1,
     };
@@ -94,7 +94,7 @@ describe('ERC20 Limit Order', function () {
 
       // 取消订单时，将返还 ETH 给 receiptor
       console.log(me.address, receiptor.address);
-      await expect(await exchange.connect(me).cancelOrder(orderId))
+      await expect(await exchange.connect(me).closeOrder(orderId))
         .to.changeEtherBalance(receiptor, 9990)
         .to.changeEtherBalance(owner, 0);
     });
